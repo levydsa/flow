@@ -65,6 +65,7 @@ struct Metadata {
     layout: Option<String>,
     urgent: Vec<bool>,
     focused: Vec<bool>,
+    active: Vec<bool>,
     view: Vec<u32>,
 }
 
@@ -103,6 +104,16 @@ impl TryInto<Metadata> for State {
                 .ok_or_else(|| Error::MissingFocused)?
                 .into_iter()
                 .collect(),
+            active: self
+                .view
+                .clone()
+                .ok_or_else(|| Error::MissingFocused)?
+                .into_iter()
+                .fold(0, |acc, i| acc | i)
+                .view_bits::<Lsb0>()
+                .to_bitvec()
+                .into_iter()
+                .collect(),
             view: self.view.ok_or_else(|| Error::MissingViews)?,
             layout: self.layout,
         })
@@ -123,11 +134,12 @@ impl Dispatch<zriver_output_status_v1::ZriverOutputStatusV1, ()> for State {
             E::FocusedTags { tags } => state.focused = Some(tags.view_bits().to_bitvec()),
             E::UrgentTags { tags } => state.urgent = Some(tags.view_bits().to_bitvec()),
             E::ViewTags { tags } => {
-                state.view = Some(tags
-                    .view_bits::<LocalBits>()
-                    .chunks(u32::BITS as usize)
-                    .map(|a| a.load())
-                    .collect())
+                state.view = Some(
+                    tags.view_bits::<Lsb0>()
+                        .chunks(u32::BITS as usize)
+                        .map(|a| a.load())
+                        .collect(),
+                )
             }
 
             E::LayoutName { ref name } => state.layout = Some(name.to_owned()),
@@ -243,6 +255,7 @@ fn main() {
         let mut metadata: Metadata = state.clone().try_into().unwrap();
         metadata.urgent.truncate(cli.tags.into());
         metadata.focused.truncate(cli.tags.into());
+        metadata.active.truncate(cli.tags.into());
 
         if state.changed {
             println!("{}", serde_json::to_string(&metadata).unwrap());
