@@ -43,7 +43,7 @@ struct State {
     layout: Option<String>,
     focused: Option<BitVec<u32>>,
     urgent: Option<BitVec<u32>>,
-    view: Option<Vec<u8>>,
+    view: Option<Vec<u32>>,
 }
 
 #[derive(Parser)]
@@ -65,7 +65,7 @@ struct Metadata {
     layout: Option<String>,
     urgent: Vec<bool>,
     focused: Vec<bool>,
-    view: Vec<u8>,
+    view: Vec<u32>,
 }
 
 #[derive(Error, Debug)]
@@ -122,7 +122,13 @@ impl Dispatch<zriver_output_status_v1::ZriverOutputStatusV1, ()> for State {
         match event {
             E::FocusedTags { tags } => state.focused = Some(tags.view_bits().to_bitvec()),
             E::UrgentTags { tags } => state.urgent = Some(tags.view_bits().to_bitvec()),
-            E::ViewTags { tags } => state.view = Some(tags),
+            E::ViewTags { tags } => {
+                state.view = Some(tags
+                    .view_bits::<LocalBits>()
+                    .chunks(u32::BITS as usize)
+                    .map(|a| a.load())
+                    .collect())
+            }
 
             E::LayoutName { ref name } => state.layout = Some(name.to_owned()),
             E::LayoutNameClear => state.layout = None,
@@ -228,6 +234,7 @@ fn main() {
             || state.layout.is_none()
             || state.focused.is_none()
             || state.urgent.is_none()
+            || state.view.is_none()
             || !state.changed
         {
             event_queue.blocking_dispatch(&mut state).unwrap();
@@ -236,7 +243,6 @@ fn main() {
         let mut metadata: Metadata = state.clone().try_into().unwrap();
         metadata.urgent.truncate(cli.tags.into());
         metadata.focused.truncate(cli.tags.into());
-        metadata.view.truncate(cli.tags.into());
 
         if state.changed {
             println!("{}", serde_json::to_string(&metadata).unwrap());
