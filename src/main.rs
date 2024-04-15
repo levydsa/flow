@@ -43,6 +43,7 @@ struct State {
     layout: Option<String>,
     focused: Option<BitVec<u32>>,
     urgent: Option<BitVec<u32>>,
+    view: Option<Vec<u8>>,
 }
 
 #[derive(Parser)]
@@ -64,6 +65,7 @@ struct Metadata {
     layout: Option<String>,
     urgent: Vec<bool>,
     focused: Vec<bool>,
+    view: Vec<u8>,
 }
 
 #[derive(Error, Debug)]
@@ -76,6 +78,9 @@ enum Error {
 
     #[error("missing urgent tags list")]
     MissingUrgent,
+
+    #[error("missing views tags list")]
+    MissingViews,
 
     #[error("missing focused tags list")]
     MissingFocused,
@@ -98,6 +103,7 @@ impl TryInto<Metadata> for State {
                 .ok_or_else(|| Error::MissingFocused)?
                 .into_iter()
                 .collect(),
+            view: self.view.ok_or_else(|| Error::MissingViews)?,
             layout: self.layout,
         })
     }
@@ -116,6 +122,7 @@ impl Dispatch<zriver_output_status_v1::ZriverOutputStatusV1, ()> for State {
         match event {
             E::FocusedTags { tags } => state.focused = Some(tags.view_bits().to_bitvec()),
             E::UrgentTags { tags } => state.urgent = Some(tags.view_bits().to_bitvec()),
+            E::ViewTags { tags } => state.view = Some(tags),
 
             E::LayoutName { ref name } => state.layout = Some(name.to_owned()),
             E::LayoutNameClear => state.layout = None,
@@ -210,7 +217,10 @@ fn main() {
 
     display.get_registry(&qh, ());
 
-    let mut state = State { changed: true, ..State::default() };
+    let mut state = State {
+        changed: true,
+        ..State::default()
+    };
 
     loop {
         while state.title.is_none()
@@ -226,6 +236,7 @@ fn main() {
         let mut metadata: Metadata = state.clone().try_into().unwrap();
         metadata.urgent.truncate(cli.tags.into());
         metadata.focused.truncate(cli.tags.into());
+        metadata.view.truncate(cli.tags.into());
 
         if state.changed {
             println!("{}", serde_json::to_string(&metadata).unwrap());
