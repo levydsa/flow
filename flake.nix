@@ -3,16 +3,30 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    flake-utils = {
+      url = "github:numtide/flake-utils";
+    };
+    crane = {
+      url = "github:ipetkov/crane";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, flake-utils, crane }:
+    flake-utils.lib.eachDefaultSystem (system:
     let 
-      system = "x86_64-linux";
+      craneLib = crane.mkLib pkgs;
+
       pkgs = import nixpkgs {
         inherit system;
       };
     in
-    {
-      defaultPackage.${system} = import ./default.nix { inherit pkgs; };
-    };
+    rec {
+      formatter = pkgs.nixpkgs-fmt;
+      packages.flow = craneLib.buildPackage {
+        src = ./.;
+        strictDeps = true;
+      };
+      packages.default = packages.flow;
+    });
 }
